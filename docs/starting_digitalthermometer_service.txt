@@ -1,0 +1,23 @@
+Create Digital Thermometer service
+
+1. Copy /home/pi/PyScripts/DigitalThermometer/config/digitalthermometer.service file
+to /etc/systemd/system/
+
+	sudo cp /home/pi/PyScripts/DigitalThermometer/config/digitalthermometer.service /etc/systemd/system/
+
+2. Change file access permission
+
+	sudo chmod 664 /etc/systemd/system/digitalthermometer.service
+
+3. Reload systemd daemon
+
+	sudo systemctl daemon-reload
+
+4. Test service using below commands
+	sudo systemctl start digitalthermometer
+	sudo systemctl stop digitalthermometer
+	sudo systemctl restart digitalthermometer
+	systemctl status digitalthermometer 
+
+5. If all is working fine then enable the service
+	sudo systemctl enable digitalthermometer

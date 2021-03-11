@@ -1,0 +1,17 @@
+2021-03-11 15:47:10,298:MainThread:digitialthermometer.py:301:INFO:Backlight is On!
+2021-03-11 15:47:10,300:ButtonHndlThread:digitialthermometer.py:338:INFO:Starting Button Handling Thread!
+2021-03-11 15:47:34,551:MainThread:digitialthermometer.py:426:INFO:Exiting the program, ctrl+C pressed...
+2021-03-11 19:13:02,192:MainThread:digitialthermometer.py:301:INFO:Backlight is On!
+2021-03-11 19:13:02,194:ButtonHndlThread:digitialthermometer.py:338:INFO:Starting Button Handling Thread!
+2021-03-11 19:35:14,008:MainThread:digitialthermometer.py:381:INFO:Exiting the program, SIGTERM received...
+2021-03-11 19:35:25,578:MainThread:digitialthermometer.py:301:INFO:Backlight is On!
+2021-03-11 19:35:25,579:ButtonHndlThread:digitialthermometer.py:338:INFO:Starting Button Handling Thread!
+2021-03-11 19:35:31,604:MainThread:digitialthermometer.py:434:WARNING:Other exception cought, just ignore it and proceed!
+2021-03-11 19:35:31,605:MainThread:digitialthermometer.py:435:WARNING:Sensor 8a2015d781ff is not yet ready to read temperature
+2021-03-11 19:36:32,506:MainThread:digitialthermometer.py:381:INFO:Exiting the program, SIGTERM received...
+2021-03-11 19:36:43,432:MainThread:digitialthermometer.py:301:INFO:Backlight is On!
+2021-03-11 19:36:43,433:ButtonHndlThread:digitialthermometer.py:338:INFO:Starting Button Handling Thread!
+2021-03-11 19:36:47,465:MainThread:digitialthermometer.py:434:WARNING:Other exception cought, just ignore it and proceed!
+2021-03-11 19:36:47,468:MainThread:digitialthermometer.py:435:WARNING:Sensor 8a2015d781ff is not yet ready to read temperature
+2021-03-11 19:36:48,512:MainThread:digitialthermometer.py:434:WARNING:Other exception cought, just ignore it and proceed!
+2021-03-11 19:36:48,512:MainThread:digitialthermometer.py:435:WARNING:Sensor 8a2015d781ff is not yet ready to read temperature

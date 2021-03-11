@@ -1,0 +1,12 @@
+Configure Raspberry Pi GPIO:
+
+1. Copy /home/pi/PyScripts/DigitalThermometer/config/config.txt file to /boot directory
+
+	sudo cp /home/pi/PyScripts/DigitalThermometer/config/config.txt /boot
+
+This is modified file with spi, i2c and w1 interfaces enabled. Additionally gpio pin 26 is configured to
+change its state to low when raspberry pi is halted.
+
+2. Reboot Raspberry Pi
+
+	reboot
