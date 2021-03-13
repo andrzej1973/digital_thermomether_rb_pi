@@ -5,7 +5,7 @@ to /etc/systemd/system/
 
 	sudo cp /home/pi/PyScripts/DigitalThermometer/config/digitalthermometer.service /etc/systemd/system/
 
-2. Change file access permission
+2. Change service file access permission
 
 	sudo chmod 664 /etc/systemd/system/digitalthermometer.service
 
