@@ -17,6 +17,8 @@ import sys
 import digitalio
 import board
 import os
+import json
+import paho.mqtt.client as mqtt
 
 import smbus2
 import bme280
@@ -29,7 +31,23 @@ import adafruit_rgb_display.st7789 as st7789
 #Set debug to True in order to log all messages!
 LOG_ALL = False
 #Set log_to_file flag to False in order to print logs on stdout
-LOG_TO_FILE = True
+LOG_TO_FILE = False
+
+##########################
+#MQTT Connection Settings#
+##########################
+#Quality of Service Level for MQTT transfer, supported values 0 and 1
+mqtt_qos=1
+#Broker address - Change this line!
+#Test Broker address: test.mosquitto.org
+mqtt_broker_address="test.mosquitto.org"
+#mqtt_broker_address="localhost"
+#Brokers TCP Port number
+mqtt_broker_port=1883
+#Connection keep alive interval in sec
+mqtt_keep_alive=60
+#Topic on which measurement record will be published
+mqtt_topic="47e0g1/headlesspi/climdata"
 
 def cmd_usage():
   print ('Usage: '+sys.argv[0]+' {[-d | --debug debug]}')
@@ -46,9 +64,6 @@ except getopt.GetoptError as err:
 for opt, arg in options:
     if opt in ('-d', '--debug'):
         debug = True
-
-#configure logger module
-#levels: DEBUG,INFO,WARNING,ERROR,CRITICAL
     
 #create two log file handlers, one for actual log file and another for stdout
 stdout_handler = logging.StreamHandler(sys.stdout)
@@ -68,11 +83,18 @@ if LOG_TO_FILE == True:
 else:
     hndls = [stdout_handler]
         
+#configure logger module
+#levels: DEBUG,INFO,WARNING,ERROR,CRITICAL
+
 if LOG_ALL == True:
     logging.basicConfig(level = logging.DEBUG,format = '%(asctime)s:%(threadName)s:%(filename)s:%(lineno)s:%(levelname)s:%(message)s', handlers=hndls)
 else:
     logging.basicConfig(level = logging.INFO,format = '%(asctime)s:%(threadName)s:%(filename)s:%(lineno)s:%(levelname)s:%(message)s', handlers=hndls)
 
+
+if mqtt_qos != 0 and mqtt_qos != 1:
+    mqtt_qos = 1
+    logging.warning('Provided MQTT QoS value is not supported. Default QoS=1 is used...')
 
 ###################################
 #i2c BME280 Configuration settings#
@@ -88,6 +110,21 @@ try:
 except:
     logging.error('I2C: Failed to initiate i2c bus: %s and exiting the program...', sys.exc_info()[1])
     exit(1)
+    
+    
+#####################
+# bme280 fixed uuid #
+#####################
+
+#sensor id provided by bme280
+#module is generated every
+#time calibration routine
+#is called, that is why we
+#use fixed value, which stays
+#constant even if program
+#is restarted!
+#bme280_uuid_str = "56dfbba2-64bb-402b-abdf-ce2d69162c99"
+bme280_uuid_str = "564ac640bedb" #shortversion...
 
 try:
     bme280_calibration_params = bme280.load_calibration_params(i2c_bus, i2c_address)
@@ -116,6 +153,26 @@ try:
 except:
     logging.error('DS18B2: Failed to read measurement record: %s and exiting the program...', sys.exc_info()[1])
     exit(1)
+    
+def mqtt_on_connect(mqtt_client, userdata, flags, rc):
+    if rc==0:
+       mqtt.Client.connected_flag=True #flag set
+       logging.info('Received:MQTT_CONNACK(rc=%i)',rc)
+       logging.info('Connection to MQTT Broker established!')
+    else:
+        logging.info('Received:MQTT_CONNACK(rc=%i)',rc)
+        logging.info('Connection establishment to MQTT Broker failed!')
+        
+def mqtt_on_disconnect(mqtt_client, userdata, rc):
+    mqtt.Client.connected_flag=False #flag set
+    if rc==0:
+       logging.info('Disconnection from MQTT Broker completed!')
+    else:
+        logging.error('Unexpected disconnection from MQTT Broker!')
+        
+def mqtt_on_publish(mqtt_client, userdata, mid):
+    if mqtt_qos==1:
+        logging.debug('Received:MQTT_PUBACK(mid=%i)',mid)
 
 # Configuration for CS and DC pins (these are FeatherWing defaults on M0/M4):
 cs_pin = digitalio.DigitalInOut(board.CE0)
@@ -140,8 +197,6 @@ disp = st7789.ST7789(
     x_offset=0,
     y_offset=80,
 )
-
-
 
 def DisplayMeasurements(display,image_rotation,font_color_primary, font_color_secondary,bg_color,intemperaturevalstr,inpressurevalstr,inhumidityvalstr,outtemperaturevalstr):
     # Create blank image for drawing.
@@ -361,7 +416,16 @@ def ButtonHandlingThread(bclt,button):
                 PiRestart()
             reset_counter = 0   
                 
-        
+def handleSIGTERM(signum, frame):
+    global backlight
+    global thread_exit
+    global disp
+    logging.info('Exiting the program, SIGTERM received...')
+    ClearDisplay(disp,0)
+    backlight.value = False
+    thread_exit = True
+    thread.join()
+    exit(0)        
       
 backlight = digitalio.DigitalInOut(board.D22)
 backlight.switch_to_output()
@@ -374,18 +438,6 @@ thread_exit = False
 thread = Thread(target = ButtonHandlingThread, name = "ButtonHndlThread", args = (backlight, buttons, ))
 thread.start()
 
-def handleSIGTERM(signum, frame):
-    global backlight
-    global thread_exit
-    global disp
-    logging.info('Exiting the program, SIGTERM received...')
-    ClearDisplay(disp,0)
-    backlight.value = False
-    thread_exit = True
-    thread.join()
-    exit(0)
-
-
 #turn off backlight and clean screen when SIGTERM is received i.e.:
 # at service stop
 # when kill command is send to the process/service
@@ -393,6 +445,35 @@ def handleSIGTERM(signum, frame):
 signal.signal(signal.SIGTERM, handleSIGTERM)
 
 secondary_color = "#FFFFFF"
+
+#create connection state flag in class
+mqtt.Client.connected_flag=False
+
+#create mqtt client instance
+mqtt_client = mqtt.Client()
+
+#bind on_connect and on_disconnect callback functions 
+mqtt_client.on_connect=mqtt_on_connect
+mqtt_client.on_disconnect=mqtt_on_disconnect
+mqtt_client.on_publish=mqtt_on_publish
+
+#start network loop
+mqtt_client.loop_start()
+
+logging.debug('Sent:MQTT_CONNECT:(IP:%s,TCP Port:%s,Topic:%s,QoS:%i,KeepAlive:%i)',mqtt_broker_address, mqtt_broker_port, mqtt_topic, mqtt_qos, mqtt_keep_alive)
+
+#connect to MQTT Broker
+try:
+    mqtt_client.connect(mqtt_broker_address,mqtt_broker_port,mqtt_keep_alive)
+except:
+    logging.error('Connection establishment failed due to: %s, exiting the program...', sys.exc_info()[1])
+    exit(1) #Should quit or raise flag to quit or retry (not implemented)
+    
+while not mqtt_client.connected_flag: #wait in loop
+    logging.info('Trying to connect to MQTT Broker...')
+    time.sleep(0.5)
+    
+logging.info('Entering Main Measurement Loop!')
 
 while (True):
     try:
@@ -405,27 +486,66 @@ while (True):
         logging.debug('   pressure: %f',float(bme280_data.pressure))
         logging.debug('   humidity: %f', float(bme280_data.humidity))
         
+        # Take single reading from DS18B2 sensor
         ds18b2_data = ds18b2.get_temperature()
-        ds18b2_data=str(round(float(ds18b2_data)))
+        ds18b2_data_str=str(float(ds18b2_data))
         now = datetime.now() # current date and time
-        timestamp_str=now.strftime("%Y:%m:%d %H:%M:%S.%f")
+        ds18b2_timestamp_str=now.strftime("%Y-%m-%dT%H:%M:%S.%f")+"Z"
         
         logging.debug('Measurement sample from DS18B2 sensor:')
         logging.debug('   id: %s',ds18b2.id)
-        logging.debug('   timestamp: %s',timestamp_str)
-        logging.debug('   temperature: %s C',ds18b2_data)
+        logging.debug('   timestamp: %s',ds18b2_timestamp_str)
+        logging.debug('   temperature: %s C',ds18b2_data_str)
         
         if secondary_color == "#FFFFFF":
             secondary_color = "#1AA3FF"
         else:
             secondary_color = "#FFFFFF"
+        
+        DisplayMeasurements(disp,0,"#FFFFFF", secondary_color,"#1AA3FF",str(round(bme280_data.temperature)),str(round(bme280_data.pressure)),str(round(bme280_data.humidity)),str(round(ds18b2_data)))
             
-        DisplayMeasurements(disp,0,"#FFFFFF", secondary_color,"#1AA3FF",str(round(bme280_data.temperature)),str(round(bme280_data.pressure)),str(round(bme280_data.humidity)),ds18b2_data)
+        #conversion of timestamp string to RFC3339 format
+        timestampobj = datetime.strptime(str(bme280_data.timestamp), "%Y-%m-%d %H:%M:%S.%f")
+        timestamprfc3339=timestampobj.isoformat("T")+"Z"
+
+        #building measurementrecord
+        measurementrec={"bme280id":bme280_uuid_str,
+             timestamprfc3339:{
+                 "temperature":{
+                     "value":float(bme280_data.temperature),
+                     "unit":"C"},
+                 "pressure":{
+                     "value":float(bme280_data.pressure),
+                     "unit":"hPa"},
+                 "humidity":{
+                     "value":float(bme280_data.humidity),
+                     "unit":"rH"
+                     }
+                 },
+                "ds18b2id":str(ds18b2.id),
+                ds18b2_timestamp_str:{
+                    "temperature":{
+                        "value":float(ds18b2_data_str),
+                        "unit":"C"
+                        }
+                    }
+             }
+        #convert measurement record to mqtt message in json string
+        mqtt_msg = json.dumps(measurementrec)
+        logging.debug('mqtt message string: %s', mqtt_msg)
             
+        mqtt_publish_result=mqtt_client.publish(mqtt_topic, mqtt_msg,mqtt_qos)
+        logging.debug('Sent:MQTT_PUBLISH(mid=%i, topic:%s, msg:%s, QoS=%i, rc=%i)',mqtt_publish_result.mid,mqtt_topic, mqtt_msg, mqtt_qos, mqtt_publish_result.rc)
+ 
     except KeyboardInterrupt:
         logging.info('Exiting the program, ctrl+C pressed...')
         ClearDisplay(disp,0)
         backlight.value=False
+        #stop network loop and disconnect from MQTT Broker
+        mqtt_client.loop_stop()
+        logging.info('Sent:MQTT_DISCONNECT')
+        logging.info('Disconnecting from MQTT Broker')
+        mqtt_client.disconnect();
         #set exit flag for the thread and wait for it to finish
         thread_exit = True
         thread.join()
