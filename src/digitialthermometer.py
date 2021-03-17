@@ -3,6 +3,19 @@
 # SPDX-FileCopyrightText: 2021 ladyada for Adafruit Industries
 # SPDX-License-Identifier: MIT
 
+###############################################################
+# digitalthermometer.py script can be run from command line   #
+# or can be started as systemd service or Raspberry Pi        #
+# Main tasks of the script are:                               #
+#     - read environment data from BME280 and DS18B2 sensors  #
+#     - show collected data on ST7789 based 240x240px LED     #
+#       display from AdaFruit                                 #
+#     - publish collected data as MQTT message                #
+#     - provide power off and display on/off functions using  #
+#       buttons available on AdaFruit display unit            #
+#                          <C> Andrzej Mazur, 17/03/2021      #
+###############################################################
+
 #Below line is required to use *C sign
 # -*- coding: utf-8 -*-
  
