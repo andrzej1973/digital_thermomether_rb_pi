@@ -44,7 +44,7 @@ import adafruit_rgb_display.st7789 as st7789
 #Set debug to True in order to log all messages!
 LOG_ALL = False
 #Set log_to_file flag to False in order to print logs on stdout
-LOG_TO_FILE = False
+LOG_TO_FILE = True
 
 ##########################
 #MQTT Connection Settings#
@@ -473,15 +473,45 @@ mqtt_client.on_publish=mqtt_on_publish
 #start network loop
 mqtt_client.loop_start()
 
-logging.debug('Sent:MQTT_CONNECT:(IP:%s,TCP Port:%s,Topic:%s,QoS:%i,KeepAlive:%i)',mqtt_broker_address, mqtt_broker_port, mqtt_topic, mqtt_qos, mqtt_keep_alive)
-
 #connect to MQTT Broker
-try:
-    mqtt_client.connect(mqtt_broker_address,mqtt_broker_port,mqtt_keep_alive)
-except:
-    logging.error('Connection establishment failed due to: %s, exiting the program...', sys.exc_info()[1])
-    exit(1) #Should quit or raise flag to quit or retry (not implemented)
+
+mqtt_client_connect_retry_limit = 10
+mqtt_client_connect_retry = 0
+mqtt_client_connect_success = False
+
+while (mqtt_client_connect_retry < mqtt_client_connect_retry_limit and mqtt_client_connect_success == False):
+    try:
+        logging.info('Sent:MQTT_CONNECT:(IP:%s,TCP Port:%s,Topic:%s,QoS:%i,KeepAlive:%i)',mqtt_broker_address, mqtt_broker_port, mqtt_topic, mqtt_qos, mqtt_keep_alive)
+        mqtt_client.connect(mqtt_broker_address,mqtt_broker_port,mqtt_keep_alive)
+        mqtt_client_connect_success = True
+    except KeyboardInterrupt:
+        logging.info('Exiting the program, ctrl+C pressed...')
+        backlight.value=False
+        #stop network loop and disconnect from MQTT Broker
+        mqtt_client.loop_stop()
+        logging.info('Sent:MQTT_DISCONNECT')
+        logging.info('Disconnecting from MQTT Broker')
+        mqtt_client.disconnect();
+        #set exit flag for the thread and wait for it to finish
+        thread_exit = True
+        thread.join()
+        exit(0)
+    except:
+        mqtt_client_connect_retry = mqtt_client_connect_retry + 1
+        logging.error('Connection establishment failed due to: %s, retry (%i out of % i) in %i sec. ...', sys.exc_info()[1],mqtt_client_connect_retry, mqtt_client_connect_retry_limit, 1+mqtt_client_connect_retry)
+        time.sleep(1+mqtt_client_connect_retry)
+        pass
     
+if mqtt_client_connect_success == False:
+    logging.error('Connection establishment failed due to: %s, exiting the program...', sys.exc_info()[1])
+    backlight.value=False
+    #stop network loop
+    mqtt_client.loop_stop()
+    #set exit flag for the thread and wait for it to finish
+    thread_exit = True
+    thread.join()
+    exit(1) #Should quit or raise flag to quit or retry (not implemented) 
+
 while not mqtt_client.connected_flag: #wait in loop
     logging.info('Trying to connect to MQTT Broker...')
     time.sleep(0.5)
