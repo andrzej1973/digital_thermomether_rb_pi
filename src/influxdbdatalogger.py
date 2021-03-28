@@ -22,7 +22,7 @@ from influxdb import InfluxDBClient
 #Set debug to True in order to log all messages!
 LOG_ALL = False
 #Set log_to_file flag to False in order to print logs on stdout
-LOG_TO_FILE = False
+LOG_TO_FILE = True
 
 ##########################
 #MQTT Connection Settings#

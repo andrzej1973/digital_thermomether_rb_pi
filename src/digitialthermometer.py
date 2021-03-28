@@ -151,21 +151,6 @@ try:
 except:
     logging.error('DS18B2: Failed to initialize: %s and exiting the program...', sys.exc_info()[1])
     exit(1)
-
-# Take a single reading from BME280 sensor and return a
-# compensated_reading object
-try:
-    bme280_data = bme280.sample(i2c_bus, i2c_address, bme280_calibration_params)
-except:
-    logging.error('BME280: Failed to read measurement record: %s and exiting the program...', sys.exc_info()[1])
-    exit(1)
-
-# Take single reading from DS18B2 sensor
-try: 
-    temp = ds18b2.get_temperature()
-except:
-    logging.error('DS18B2: Failed to read measurement record: %s and exiting the program...', sys.exc_info()[1])
-    exit(1)
     
 def mqtt_on_connect(mqtt_client, userdata, flags, rc):
     if rc==0:
@@ -475,7 +460,7 @@ mqtt_client.loop_start()
 
 #connect to MQTT Broker
 
-mqtt_client_connect_retry_limit = 10
+mqtt_client_connect_retry_limit = 30
 mqtt_client_connect_retry = 0
 mqtt_client_connect_success = False
 
@@ -502,19 +487,20 @@ while (mqtt_client_connect_retry < mqtt_client_connect_retry_limit and mqtt_clie
         time.sleep(1+mqtt_client_connect_retry)
         pass
     
-if mqtt_client_connect_success == False:
-    logging.error('Connection establishment failed due to: %s, exiting the program...', sys.exc_info()[1])
-    backlight.value=False
+if mqtt_client_connect_success == True:
+    mqtt_client_connect_timeout = 30 #in sec
+    mqtt_client_connect_time = 0
+    mqtt_client_connect_delay = 0.5 #in sec
+    while (not mqtt_client.connected_flag and mqtt_client_connect_time < mqtt_client_connect_timeout): #wait in loop
+        logging.info('Trying to connect to MQTT Broker...')
+        time.sleep(mqtt_client_connect_delay)
+        mqtt_client_connect_time = mqtt_client_connect_time + mqtt_client_connect_delay
+
+if mqtt_client.connected_flag == False:
+    #deactivate MQTT interface and proceed with service
+    logging.error('Connection to MQTT Broker not possible to establish. Restart the service to re-attempt connection to MQTT Broker!')
     #stop network loop
     mqtt_client.loop_stop()
-    #set exit flag for the thread and wait for it to finish
-    thread_exit = True
-    thread.join()
-    exit(1) #Should quit or raise flag to quit or retry (not implemented) 
-
-while not mqtt_client.connected_flag: #wait in loop
-    logging.info('Trying to connect to MQTT Broker...')
-    time.sleep(0.5)
     
 logging.info('Entering Main Measurement Loop!')
 
@@ -540,45 +526,54 @@ while (True):
         logging.debug('   timestamp: %s',ds18b2_timestamp_str)
         logging.debug('   temperature: %s C',ds18b2_data_str)
         
+        if mqtt_client.connected_flag == True:
+            #set flashing cursor to white to indicate that MQTT is up
+            sec_clr = "#1AA3FF"
+        else:
+            #set flashing cursor to red to indicate that MQTT is down
+            #only service restart can re-establish MQTT connection
+            sec_clr = "#FF0000"
+            
         if secondary_color == "#FFFFFF":
-            secondary_color = "#1AA3FF"
+            secondary_color = sec_clr
         else:
             secondary_color = "#FFFFFF"
         
         DisplayMeasurements(disp,0,"#FFFFFF", secondary_color,"#1AA3FF",str(round(bme280_data.temperature)),str(round(bme280_data.pressure)),str(round(bme280_data.humidity)),str(round(ds18b2_data)))
-            
-        #conversion of timestamp string to RFC3339 format
-        timestampobj = datetime.strptime(str(bme280_data.timestamp), "%Y-%m-%d %H:%M:%S.%f")
-        timestamprfc3339=timestampobj.isoformat("T")+"Z"
+        
+        if mqtt_client.connected_flag == True:
+            #conversion of timestamp string to RFC3339 format
+            timestampobj = datetime.strptime(str(bme280_data.timestamp), "%Y-%m-%d %H:%M:%S.%f")
+            timestamprfc3339=timestampobj.isoformat("T")+"Z"
 
-        #building measurementrecord
-        measurementrec={"bme280id":bme280_uuid_str,
-             timestamprfc3339:{
-                 "temperature":{
-                     "value":float(bme280_data.temperature),
-                     "unit":"C"},
-                 "pressure":{
-                     "value":float(bme280_data.pressure),
-                     "unit":"hPa"},
-                 "humidity":{
-                     "value":float(bme280_data.humidity),
-                     "unit":"rH"
-                     }
-                 },
-                "ds18b2id":str(ds18b2.id),
-                ds18b2_timestamp_str:{
-                    "temperature":{
-                        "value":float(ds18b2_data_str),
-                        "unit":"C"
-                        }
-                    }
-             }
-        #convert measurement record to mqtt message in json string
-        mqtt_msg = json.dumps(measurementrec)
-        logging.debug('mqtt message string: %s', mqtt_msg)
+            #building measurementrecord
+            measurementrec={"bme280id":bme280_uuid_str,
+                            timestamprfc3339:{
+                                "temperature":{
+                                "value":float(bme280_data.temperature),
+                                "unit":"C"},
+                            "pressure":{
+                                 "value":float(bme280_data.pressure),
+                                 "unit":"hPa"},
+                             "humidity":{
+                                 "value":float(bme280_data.humidity),
+                                 "unit":"rH"
+                            }
+                         },
+                            "ds18b2id":str(ds18b2.id),
+                            ds18b2_timestamp_str:{
+                                "temperature":{
+                                "value":float(ds18b2_data_str),
+                                "unit":"C"
+                                }
+                            }
+                         }
+            #convert measurement record to mqtt message in json string
+            mqtt_msg = json.dumps(measurementrec)
+            logging.debug('mqtt message string: %s', mqtt_msg)
             
-        mqtt_publish_result=mqtt_client.publish(mqtt_topic, mqtt_msg,mqtt_qos)
-        logging.debug('Sent:MQTT_PUBLISH(mid=%i, topic:%s, msg:%s, QoS=%i, rc=%i)',mqtt_publish_result.mid,mqtt_topic, mqtt_msg, mqtt_qos, mqtt_publish_result.rc)
+            mqtt_publish_result=mqtt_client.publish(mqtt_topic, mqtt_msg,mqtt_qos)
+            logging.debug('Sent:MQTT_PUBLISH(mid=%i, topic:%s, msg:%s, QoS=%i, rc=%i)',mqtt_publish_result.mid,mqtt_topic, mqtt_msg, mqtt_qos, mqtt_publish_result.rc)
  
     except KeyboardInterrupt:
         logging.info('Exiting the program, ctrl+C pressed...')
