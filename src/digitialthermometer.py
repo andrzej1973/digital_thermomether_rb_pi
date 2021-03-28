@@ -44,7 +44,7 @@ import adafruit_rgb_display.st7789 as st7789
 #Set debug to True in order to log all messages!
 LOG_ALL = False
 #Set log_to_file flag to False in order to print logs on stdout
-LOG_TO_FILE = True
+LOG_TO_FILE = False
 
 ##########################
 #MQTT Connection Settings#
@@ -139,18 +139,6 @@ except:
 #bme280_uuid_str = "56dfbba2-64bb-402b-abdf-ce2d69162c99"
 bme280_uuid_str = "564ac640bedb" #shortversion...
 
-try:
-    bme280_calibration_params = bme280.load_calibration_params(i2c_bus, i2c_address)
-except:
-    logging.error('BME280: Failed to load calibration data: %s and exiting the program...', sys.exc_info()[1])
-    exit(1)
-    
-try:
-    #initialize DS18B2 1-wire sensor
-    ds18b2 = W1ThermSensor()
-except:
-    logging.error('DS18B2: Failed to initialize: %s and exiting the program...', sys.exc_info()[1])
-    exit(1)
     
 def mqtt_on_connect(mqtt_client, userdata, flags, rc):
     if rc==0:
@@ -172,30 +160,7 @@ def mqtt_on_publish(mqtt_client, userdata, mid):
     if mqtt_qos==1:
         logging.debug('Received:MQTT_PUBACK(mid=%i)',mid)
 
-# Configuration for CS and DC pins (these are FeatherWing defaults on M0/M4):
-cs_pin = digitalio.DigitalInOut(board.CE0)
-dc_pin = digitalio.DigitalInOut(board.D25)
-reset_pin = None
- 
-# Config for display baudrate (default max is 24mhz):
-BAUDRATE = 64000000
- 
-# Setup SPI bus using hardware SPI:
-spi = board.SPI()
- 
-# Create the ST7789 display:
-disp = st7789.ST7789(
-    spi,
-    cs=cs_pin,
-    dc=dc_pin,
-    rst=reset_pin,
-    baudrate=BAUDRATE,
-    width=240,
-    height=240,
-    x_offset=0,
-    y_offset=80,
-)
-
+#####
 def DisplayMeasurements(display,image_rotation,font_color_primary, font_color_secondary,bg_color,intemperaturevalstr,inpressurevalstr,inhumidityvalstr,outtemperaturevalstr):
     # Create blank image for drawing.
     # Make sure to create image with mode 'RGB' for full color.
@@ -423,10 +388,61 @@ def handleSIGTERM(signum, frame):
     backlight.value = False
     thread_exit = True
     thread.join()
-    exit(0)        
+    exit(0)
+    
+#Configure Digital GPIO pins to control LED indicators and backlight
       
 backlight = digitalio.DigitalInOut(board.D22)
 backlight.switch_to_output()
+
+ds18b2_read_led = digitalio.DigitalInOut(board.D12)
+ds18b2_read_led.switch_to_output()
+ds18b2_error_led = digitalio.DigitalInOut(board.D16)
+ds18b2_error_led.switch_to_output()
+#D20D21
+bme280_read_led = digitalio.DigitalInOut(board.D20)
+bme280_read_led.switch_to_output()
+bme280_error_led = digitalio.DigitalInOut(board.D21)
+bme280_error_led.switch_to_output()
+
+# Configuration for CS and DC pins (these are FeatherWing defaults on M0/M4):
+cs_pin = digitalio.DigitalInOut(board.CE0)
+dc_pin = digitalio.DigitalInOut(board.D25)
+reset_pin = None
+ 
+# Config for display baudrate (default max is 24mhz):
+BAUDRATE = 64000000
+ 
+# Setup SPI bus using hardware SPI:
+spi = board.SPI()
+ 
+# Create the ST7789 display:
+disp = st7789.ST7789(
+    spi,
+    cs=cs_pin,
+    dc=dc_pin,
+    rst=reset_pin,
+    baudrate=BAUDRATE,
+    width=240,
+    height=240,
+    x_offset=0,
+    y_offset=80,
+)
+
+# Initialize environment sensors
+
+try:
+    bme280_calibration_params = bme280.load_calibration_params(i2c_bus, i2c_address)
+except:
+    logging.error('BME280: Failed to load calibration data: %s and exiting the program...', sys.exc_info()[1])
+    exit(1)
+    
+try:
+    #initialize DS18B2 1-wire sensor
+    ds18b2 = W1ThermSensor()
+except:
+    logging.error('DS18B2: Failed to initialize: %s and exiting the program...', sys.exc_info()[1])
+    exit(1)
 
 buttons = InitalizeButtons()
 
@@ -508,6 +524,9 @@ while (True):
     try:
         bme280_data = bme280.sample(i2c_bus, i2c_address, bme280_calibration_params)
         
+        bme280_read_led.value=True
+        bme280_error_led.value=False
+        
         logging.debug('Measurement sample from BME280 sensor:')
         logging.debug('   id: %s',str(bme280_data.id))
         logging.debug('   timestamp: %s',str(bme280_data.timestamp))
@@ -517,6 +536,10 @@ while (True):
         
         # Take single reading from DS18B2 sensor
         ds18b2_data = ds18b2.get_temperature()
+        
+        ds18b2_read_led.value=True
+        ds18b2_error_led.value=False
+        
         ds18b2_data_str=str(float(ds18b2_data))
         now = datetime.now() # current date and time
         ds18b2_timestamp_str=now.strftime("%Y-%m-%dT%H:%M:%S.%f")+"Z"
@@ -574,11 +597,14 @@ while (True):
             
             mqtt_publish_result=mqtt_client.publish(mqtt_topic, mqtt_msg,mqtt_qos)
             logging.debug('Sent:MQTT_PUBLISH(mid=%i, topic:%s, msg:%s, QoS=%i, rc=%i)',mqtt_publish_result.mid,mqtt_topic, mqtt_msg, mqtt_qos, mqtt_publish_result.rc)
- 
+
     except KeyboardInterrupt:
         logging.info('Exiting the program, ctrl+C pressed...')
         ClearDisplay(disp,0)
+        #turn off LED indicators and display backlight
         backlight.value=False
+        ds18b2_read_led.value = False
+        ds18b2_error_led.value = False
         #stop network loop and disconnect from MQTT Broker
         mqtt_client.loop_stop()
         logging.info('Sent:MQTT_DISCONNECT')
@@ -588,9 +614,32 @@ while (True):
         thread_exit = True
         thread.join()
         exit(0)
+    except OSError as e:
+        if e.args[0] == 121:
+            #Catch Error 121 - Remote I/O Error
+            bme280_read_led.value = False
+            bme280_error_led.value = True
+            logging.warning('Sensor %s is not reachable --- just ignore it and proceed!',bme280_uuid_str)
+        else:
+            logging.warning('Other exception cought, just ignore it and proceed!')
+            logging.warning(type(e))
+            logging.warning(e.args)
+            logging.warning(e)
+        pass
     except Exception as e:
-        logging.warning('Other exception cought, just ignore it and proceed!')
-        logging.warning(e)
+        if (str(type(e)).find("w1thermsensor.errors")) != -1:
+            #Catch w1thermonsensor errors:
+            #NoSensorFoundError, ResetValueError,
+            #SensorNotReadyError, W1ThermSensorError,
+            #and UnsupportedSensorError
+            ds18b2_read_led.value = False
+            ds18b2_error_led.value = True
+            logging.warning('%s --- just ignore it and proceed!',e)
+        else:
+            logging.warning('Other exception cought, just ignore it and proceed!')
+            logging.warning(type(e))
+            logging.warning(e.args)
+            logging.warning(e)
         pass
     
     #Observe SIGTERM signal is handled in code above!
