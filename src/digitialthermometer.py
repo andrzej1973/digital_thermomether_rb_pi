@@ -142,7 +142,7 @@ bme280_uuid_str = "564ac640bedb" #shortversion...
     
 def mqtt_on_connect(mqtt_client, userdata, flags, rc):
     if rc==0:
-       mqtt.Client.connected_flag=True #flag set
+       mqtt.Client.connected_flag = True #flag set
        logging.info('Received:MQTT_CONNACK(rc=%i)',rc)
        logging.info('Connection to MQTT Broker established!')
     else:
@@ -150,7 +150,7 @@ def mqtt_on_connect(mqtt_client, userdata, flags, rc):
         logging.info('Connection establishment to MQTT Broker failed!')
         
 def mqtt_on_disconnect(mqtt_client, userdata, rc):
-    mqtt.Client.connected_flag=False #flag set
+    mqtt.Client.connected_flag = False #flag set
     if rc==0:
        logging.info('Disconnection from MQTT Broker completed!')
     else:
@@ -507,12 +507,12 @@ if mqtt_client_connect_success == True:
     mqtt_client_connect_timeout = 30 #in sec
     mqtt_client_connect_time = 0
     mqtt_client_connect_delay = 0.5 #in sec
-    while (not mqtt_client.connected_flag and mqtt_client_connect_time < mqtt_client_connect_timeout): #wait in loop
+    while (not mqtt.Client.connected_flag and mqtt_client_connect_time < mqtt_client_connect_timeout): #wait in loop
         logging.info('Trying to connect to MQTT Broker...')
         time.sleep(mqtt_client_connect_delay)
         mqtt_client_connect_time = mqtt_client_connect_time + mqtt_client_connect_delay
 
-if mqtt_client.connected_flag == False:
+if mqtt.Client.connected_flag == False:
     #deactivate MQTT interface and proceed with service
     logging.error('Connection to MQTT Broker not possible to establish. Restart the service to re-attempt connection to MQTT Broker!')
     #stop network loop

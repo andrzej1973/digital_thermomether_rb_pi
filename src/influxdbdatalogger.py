@@ -20,7 +20,7 @@ import paho.mqtt.client as mqtt
 from influxdb import InfluxDBClient
 
 #Set debug to True in order to log all messages!
-LOG_ALL = False
+LOG_ALL = True
 #Set log_to_file flag to False in order to print logs on stdout
 LOG_TO_FILE = True
 
@@ -109,7 +109,7 @@ if mqtt_qos != 0 and mqtt_qos != 1:
 
 def mqtt_on_connect(mqtt_client, userdata, flags, rc):
     if rc==0:
-        mqtt.Client.connected_flag=True #flag set
+        mqtt.Client.connected_flag = True 
         logging.info('Received:MQTT_CONNACK(rc=%i)',rc)
         logging.info('Connection to MQTT Broker established!')
         #Subscribing in on_connect() means that if we lose the connection and
@@ -121,7 +121,7 @@ def mqtt_on_connect(mqtt_client, userdata, flags, rc):
         logging.info('Connection establishment to MQTT Broker failed!')
         
 def mqtt_on_disconnect(mqtt_client, userdata, rc):
-    mqtt.Client.connected_flag=False #flag set
+    mqtt.Client.connected_flag = False
     if rc==0:
        logging.info('Disconnection from MQTT Broker completed!')
     else:
@@ -210,16 +210,28 @@ mqtt_client.on_disconnect=mqtt_on_disconnect
 mqtt_client.on_message=mqtt_on_message
 mqtt_client.on_subscribe=mqtt_on_subscribe
 
-logging.info('Sent:MQTT_CONNECT:(IP:%s,TCP Port:%s,Topic:%s,QoS:%i,KeepAlive:%i)',mqtt_broker_address, mqtt_broker_port, mqtt_topic, mqtt_qos, mqtt_keep_alive)
-
 #connect to MQTT Broker
-try:
-    mqtt_client.connect(mqtt_broker_address,mqtt_broker_port,mqtt_keep_alive)
-except:
-    logging.error('Connection establishment failed due to: %s, exiting the program...', sys.exc_info()[1])
-    exit(1) #Should quit or raise flag to quit or retry (not implemented)
 
-#start network loop and disconnect from MQTT Broker
+mqtt_client_connect_retry_limit = 30
+mqtt_client_connect_retry = 0
+mqtt_client_connect_success = False
+
+while (mqtt_client_connect_retry < mqtt_client_connect_retry_limit and mqtt_client_connect_success == False):
+    try:
+        logging.info('Sent:MQTT_CONNECT:(IP:%s,TCP Port:%s,Topic:%s,QoS:%i,KeepAlive:%i)',mqtt_broker_address, mqtt_broker_port, mqtt_topic, mqtt_qos, mqtt_keep_alive)
+        #connect is a blocking function
+        mqtt_client.connect(mqtt_broker_address,mqtt_broker_port,mqtt_keep_alive)
+        mqtt_client_connect_success = True
+    except KeyboardInterrupt:
+        logging.info('Exiting the program, ctrl+C pressed...')
+        exit(0)
+    except:
+        mqtt_client_connect_retry = mqtt_client_connect_retry + 1
+        logging.error('Connection establishment failed due to: %s, retry (%i out of % i) in %i sec. ...', sys.exc_info()[1],mqtt_client_connect_retry, mqtt_client_connect_retry_limit, 1+mqtt_client_connect_retry)
+        time.sleep(1+mqtt_client_connect_retry)
+        pass
+
+#start infinite network loop, disconnect from MQTT Broker at keyboard interupt
 try:
     mqtt_client.loop_forever()
 except KeyboardInterrupt:
@@ -227,4 +239,5 @@ except KeyboardInterrupt:
     logging.info('Sent:MQTT_DISCONNECT')
     logging.info('Disconnecting from MQTT Broker')
     mqtt_client.disconnect();
+    exit (0)
 
