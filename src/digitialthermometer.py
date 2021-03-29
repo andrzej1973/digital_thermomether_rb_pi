@@ -476,13 +476,16 @@ mqtt_client.loop_start()
 
 #connect to MQTT Broker
 
-mqtt_client_connect_retry_limit = 30
+mqtt_client_connect_retry_limit = 5
 mqtt_client_connect_retry = 0
 mqtt_client_connect_success = False
 
 while (mqtt_client_connect_retry < mqtt_client_connect_retry_limit and mqtt_client_connect_success == False):
     try:
+        if mqtt_client_connect_retry != 0: # there shall be no delay between loopstart() and connect messages!
+            time.sleep(1+mqtt_client_connect_retry)
         logging.info('Sent:MQTT_CONNECT:(IP:%s,TCP Port:%s,Topic:%s,QoS:%i,KeepAlive:%i)',mqtt_broker_address, mqtt_broker_port, mqtt_topic, mqtt_qos, mqtt_keep_alive)
+        #connect is a blocking function
         mqtt_client.connect(mqtt_broker_address,mqtt_broker_port,mqtt_keep_alive)
         mqtt_client_connect_success = True
     except KeyboardInterrupt:
@@ -490,9 +493,6 @@ while (mqtt_client_connect_retry < mqtt_client_connect_retry_limit and mqtt_clie
         backlight.value=False
         #stop network loop and disconnect from MQTT Broker
         mqtt_client.loop_stop()
-        logging.info('Sent:MQTT_DISCONNECT')
-        logging.info('Disconnecting from MQTT Broker')
-        mqtt_client.disconnect();
         #set exit flag for the thread and wait for it to finish
         thread_exit = True
         thread.join()
@@ -500,7 +500,6 @@ while (mqtt_client_connect_retry < mqtt_client_connect_retry_limit and mqtt_clie
     except:
         mqtt_client_connect_retry = mqtt_client_connect_retry + 1
         logging.error('Connection establishment failed due to: %s, retry (%i out of % i) in %i sec. ...', sys.exc_info()[1],mqtt_client_connect_retry, mqtt_client_connect_retry_limit, 1+mqtt_client_connect_retry)
-        time.sleep(1+mqtt_client_connect_retry)
         pass
     
 if mqtt_client_connect_success == True:
