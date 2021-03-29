@@ -8,7 +8,7 @@ WorkingDirectory=/home/pi/PyScripts/DigitalThermometer/src/
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
-User=pi
+RestartSec=30sec
 
 [Install]
 WantedBy=multi-user.target
