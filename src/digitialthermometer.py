@@ -399,7 +399,7 @@ ds18b2_read_led = digitalio.DigitalInOut(board.D12)
 ds18b2_read_led.switch_to_output()
 ds18b2_error_led = digitalio.DigitalInOut(board.D16)
 ds18b2_error_led.switch_to_output()
-#D20D21
+
 bme280_read_led = digitalio.DigitalInOut(board.D20)
 bme280_read_led.switch_to_output()
 bme280_error_led = digitalio.DigitalInOut(board.D21)
@@ -429,12 +429,19 @@ disp = st7789.ST7789(
     y_offset=80,
 )
 
-# Initialize environment sensors
+# Set off sensor indicators and initialize environment sensors
 
+bme280_read_led.value = False
+bme280_error_led.value = False
+ds18b2_read_led.value = False
+ds18b2_error_led.value = False
+ 
 try:
     bme280_calibration_params = bme280.load_calibration_params(i2c_bus, i2c_address)
 except:
     logging.error('BME280: Failed to load calibration data: %s and exiting the program...', sys.exc_info()[1])
+    logging.error('Reboot required...')
+    bme280_error_led.value = True
     exit(1)
     
 try:
@@ -442,6 +449,8 @@ try:
     ds18b2 = W1ThermSensor()
 except:
     logging.error('DS18B2: Failed to initialize: %s and exiting the program...', sys.exc_info()[1])
+    logging.error('Reboot required...')
+    ds18b2_error_led.value = True
     exit(1)
 
 buttons = InitalizeButtons()
